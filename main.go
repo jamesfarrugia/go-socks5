@@ -1,0 +1,28 @@
+package main
+
+import (
+	"os"
+	"time"
+)
+
+func main() {
+	log.Info("Golang SOCKS5 app")
+	conf := doInit(os.Args[1:])
+	service := conf.init(conf)
+
+	log.Info("Starting service at ", service.started)
+	service.runner(service)
+	log.Info("Stopped service at ", time.Now())
+}
+
+func doStartClient(conf config) service {
+	log.Info("Starting SOCKS5 client")
+	log.Info("Server is", conf.host, conf.port)
+	return service{started: time.Now(), running: true, runner: client, config: conf}
+}
+
+func doStartServer(conf config) service {
+	log.Info("Starting SOCKS5 server")
+	log.Info("Shall listen on", conf.host, conf.port)
+	return service{started: time.Now(), running: true, runner: server, config: conf}
+}
