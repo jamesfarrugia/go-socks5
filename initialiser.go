@@ -6,7 +6,7 @@ import (
 )
 
 func doInit(args []string) config {
-	conf := config{server: false, host: "127.0.0.1", port: 5822}
+	conf := config{server: false, host: "127.0.0.1", port: 1080}
 
 	for _, arg := range args {
 		conf.server = true
