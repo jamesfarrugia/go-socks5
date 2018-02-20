@@ -9,14 +9,8 @@ func doInit(args []string) config {
 	conf := config{server: false, host: "127.0.0.1", port: 5822}
 
 	for _, arg := range args {
-		if arg == "-server" {
-			conf.server = true
-			conf.init = doStartServer
-		}
-		if arg == "-client" {
-			conf.server = false
-			conf.init = doStartClient
-		}
+		conf.server = true
+		conf.init = doStartServer
 
 		if strings.HasPrefix(arg, "-host=") {
 			conf.host = arg[6:]
