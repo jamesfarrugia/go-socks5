@@ -24,6 +24,18 @@ type config struct {
 	port int
 	// initialiser function
 	init serviceInit
+	// API host
+	apiHost string
+	// API port
+	apiPort int
+}
+
+// program state
+type appState struct {
+	// active service
+	service *service
+	// active connections
+	connections []*serverConnection
 }
 
 // Service structure

@@ -44,6 +44,7 @@ const (
 // and process them in their own routine
 func server(serv service) {
 	log.Info("Starting server")
+	app.service = &serv
 
 	addr := fmt.Sprintf("%s:%d", serv.config.host, serv.config.port)
 	server, err := net.Listen("tcp", addr)
@@ -68,6 +69,8 @@ func doHandleConnection(conn net.Conn) {
 	log.Debug("Accepted connection", conn.RemoteAddr().String())
 
 	sc := serverConnection{id: time.Now().Unix(), conn: conn, status: stsNew, authMethod: -1, dataCount: 0}
+
+	app.connections = append(app.connections, &sc)
 
 	if sc.status == stsNew {
 		sc.status = stsRdHead
