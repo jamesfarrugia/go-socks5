@@ -3,9 +3,12 @@ package main
 import (
 	"os"
 	"time"
+
+	logging "github.com/op/go-logging"
 )
 
 func main() {
+	logging.SetBackend(backend, backendFormatter)
 	log.Info("Golang SOCKS5 app - James Farrugia 2018")
 	conf := doInit(os.Args[1:])
 	service := conf.init(conf)

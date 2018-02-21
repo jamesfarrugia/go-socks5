@@ -6,12 +6,11 @@ import (
 )
 
 func doInit(args []string) config {
-	conf := config{server: false, host: "127.0.0.1", port: 1080}
+	conf := config{server: true, host: "127.0.0.1", port: 1080}
+	conf.server = true
+	conf.init = doStartServer
 
 	for _, arg := range args {
-		conf.server = true
-		conf.init = doStartServer
-
 		if strings.HasPrefix(arg, "-host=") {
 			conf.host = arg[6:]
 		}
