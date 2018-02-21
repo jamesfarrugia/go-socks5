@@ -7,8 +7,6 @@ import (
 	"net"
 	"strings"
 	"time"
-
-	"code.cloudfoundry.org/bytefmt"
 )
 
 // Proxies the connection and pipes the data between client and target
@@ -102,6 +100,11 @@ func doProcessConnectionHeader(conn *serverConnection, cmdBuf []byte) {
 
 // Connects to a target server
 func doConnectToTarget(conn *serverConnection) {
+	if conn.targetIP == nil || len(conn.targetIP) < 4 {
+		conn.status = stsTgtErr
+		log.Error("IP Address is invalid", conn.targetIP)
+		return
+	}
 	ip := net.IPv4(conn.targetIP[0], conn.targetIP[1], conn.targetIP[2], conn.targetIP[3])
 	addr := strings.Join([]string{ip.String(), fmt.Sprint(conn.targetPort)}, ":")
 	rConn, err := net.Dial("tcp", addr)
@@ -122,46 +125,55 @@ func doHandleProxying(conn *serverConnection) {
 	go egress(conn)
 	go ingress(conn)
 
-	var prev int64
 	for conn.status == stsProxying {
 		time.Sleep(time.Duration(5) * time.Second)
-		log.Debug("Session ", conn.id, " - ", prev, " bytes in last 5 sec ~ ", bytefmt.ByteSize(uint64((prev / 5))), "/s")
-		prev = conn.dataCount - prev
 	}
 }
 
 // egress from client to target
 func egress(conn *serverConnection) {
 	for conn.status == stsProxying {
-		pipe(conn, conn.conn, conn.targetConn)
+		pipe(conn, conn.conn, counterWriter{
+			to:   conn.targetConn,
+			in:   false,
+			conn: conn})
 	}
 }
 
 // ingress from target to client
 func ingress(conn *serverConnection) {
 	for conn.status == stsProxying {
-		pipe(conn, conn.targetConn, conn.conn)
+		pipe(conn, conn.targetConn, counterWriter{
+			to:   conn.conn,
+			in:   true,
+			conn: conn})
 	}
 }
 
-// 'Pipes' data between two connections by readin from one and writing to the other
-func pipe(conn *serverConnection, from io.Reader, to io.Writer) {
-	buf := make([]byte, 1)
-	for conn.status == stsProxying {
-		_, err := from.Read(buf)
-		if err != nil {
-			if err == io.EOF {
-				conn.status = stsClose
-			} else if err != nil {
-				log.Error("Failed to read", err.Error())
-				conn.status = stsClose
-			}
-			break
-		}
-		_, err = to.Write(buf)
+// 'Pipes' data between two connections by copying from one to the other
+func pipe(sc *serverConnection, from io.Reader, to io.Writer) {
+
+	for sc.status == stsProxying {
+		_, err := io.Copy(to, from)
 		if err != nil {
 			log.Error("Failed to write data while piping")
 		}
-		conn.dataCount++
+		log.Info("Closing ", sc.id)
+		sc.status = stsClose
 	}
+}
+
+type counterWriter struct {
+	in   bool
+	conn *serverConnection
+	to   io.Writer
+}
+
+func (w counterWriter) Write(p []byte) (n int, err error) {
+	if w.in {
+		w.conn.dataIn += int64(len(p))
+	} else {
+		w.conn.dataOut += int64(len(p))
+	}
+	return w.to.Write(p)
 }

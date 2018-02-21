@@ -2,6 +2,7 @@ package main
 
 import (
 	"net"
+	"sync"
 	"time"
 )
 
@@ -36,6 +37,8 @@ type appState struct {
 	service *service
 	// active connections
 	connections []*serverConnection
+	// lock for connections list
+	connLock *sync.Mutex
 }
 
 // Service structure
@@ -52,6 +55,8 @@ type service struct {
 
 // server connection structure
 type serverConnection struct {
+	// time when started
+	started time.Time
 	// ID of connection
 	id int64
 	// socket connection from client
@@ -68,6 +73,12 @@ type serverConnection struct {
 	targetPort uint16
 	// TCP connection to target
 	targetConn net.Conn
-	// Basic stats on number of bytes proxied
-	dataCount int64
+	// Basic stats on number of bytes in
+	dataIn int64
+	// Basic stats on number of bytes out
+	dataOut int64
+}
+
+func (s serverConnection) filter(filter func() bool) bool {
+	return filter()
 }

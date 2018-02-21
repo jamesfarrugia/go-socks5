@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 	"time"
 )
 
@@ -45,7 +46,7 @@ const (
 func server(serv service) {
 	log.Info("Starting server")
 	app.service = &serv
-
+	app.connLock = &sync.Mutex{}
 	addr := fmt.Sprintf("%s:%d", serv.config.host, serv.config.port)
 	server, err := net.Listen("tcp", addr)
 
@@ -53,10 +54,12 @@ func server(serv service) {
 		panic(fmt.Sprintf("Failed to start server: %s", err.Error()))
 	}
 
+	go garbageCollector()
+
 	for {
 		conn, err := server.Accept()
 		if err != nil {
-			panic(fmt.Sprintf("Failed to accept connection: %s", err.Error()))
+			log.Error("Failed to accept connection: ", err.Error())
 		}
 
 		go doHandleConnection(conn)
@@ -68,9 +71,17 @@ func server(serv service) {
 func doHandleConnection(conn net.Conn) {
 	log.Debug("Accepted connection", conn.RemoteAddr().String())
 
-	sc := serverConnection{id: time.Now().Unix(), conn: conn, status: stsNew, authMethod: -1, dataCount: 0}
+	now := time.Now()
+	sc := serverConnection{
+		id:         now.UnixNano(),
+		conn:       conn,
+		status:     stsNew,
+		authMethod: -1,
+		started:    now}
 
+	app.connLock.Lock()
 	app.connections = append(app.connections, &sc)
+	app.connLock.Unlock()
 
 	if sc.status == stsNew {
 		sc.status = stsRdHead
@@ -253,5 +264,23 @@ func doAuthenticationResponse(sc *serverConnection) {
 		}
 		// close connection
 		sc.status = stsClose
+	}
+}
+
+// Filter the active connections to only keep those that are not closed
+func garbageCollector() {
+	for app.service.running {
+		var filtered []*serverConnection
+
+		app.connLock.Lock()
+		for _, conn := range app.connections {
+			if conn.status != stsClose {
+				filtered = append(filtered, conn)
+			}
+		}
+
+		app.connections = filtered
+		app.connLock.Unlock()
+		time.Sleep(time.Duration(5) * time.Second)
 	}
 }
