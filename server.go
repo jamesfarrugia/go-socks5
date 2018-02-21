@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"time"
 )
 
 const autMtNone = 0
@@ -46,7 +47,7 @@ func server(serv service) {
 func doHandleConnection(conn net.Conn) {
 	log.Debug("Accepted connection", conn.RemoteAddr().String())
 
-	sc := serverConnection{conn: conn, status: stsNew, authMethod: -1}
+	sc := serverConnection{id: time.Now().Unix(), conn: conn, status: stsNew, authMethod: -1, dataCount: 0}
 
 	for sc.status == stsNew {
 		sc.status = stsRdHead

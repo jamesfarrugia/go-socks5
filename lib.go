@@ -24,6 +24,7 @@ type service struct {
 }
 
 type serverConnection struct {
+	id         int64
 	conn       net.Conn
 	status     int
 	authMethod int
@@ -31,5 +32,5 @@ type serverConnection struct {
 	targetIp   []byte
 	targetPort uint16
 	targetConn net.Conn
-	dataCount  int8
+	dataCount  int64
 }

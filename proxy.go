@@ -7,6 +7,8 @@ import (
 	"net"
 	"strings"
 	"time"
+
+	"code.cloudfoundry.org/bytefmt"
 )
 
 func doProxy(conn *serverConnection) {
@@ -106,8 +108,11 @@ func doHandleProxying(conn *serverConnection) {
 	go egress(conn)
 	go ingress(conn)
 
+	var prev int64 = 0
 	for conn.status == stsProxying {
 		time.Sleep(time.Duration(5) * time.Second)
+		log.Debug("Session ", conn.id, " - ", prev, " bytes in last 5 sec ~ ", bytefmt.ByteSize(uint64((prev / 5))), "/s")
+		prev = conn.dataCount - prev
 	}
 }
 
