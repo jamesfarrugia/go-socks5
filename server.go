@@ -44,7 +44,7 @@ func server(serv service) {
 }
 
 func doHandleConnection(conn net.Conn) {
-	log.Info("Accepted connection", conn.RemoteAddr().String())
+	log.Debug("Accepted connection", conn.RemoteAddr().String())
 
 	sc := serverConnection{conn: conn, status: stsNew, authMethod: -1}
 
@@ -52,17 +52,13 @@ func doHandleConnection(conn net.Conn) {
 		sc.status = stsRdHead
 	}
 
-	log.Debug("New connection")
-
-	/* 1: SOCKS version (must be 0x5)
-	   2: No. of auth methods (0x1, user/pass only supported)
-	3: Auth method (0x2 for user/pass) */
+	/*	1: SOCKS version (must be 0x5)
+		2: No. of auth methods (0x2, noop and user/pass only supported)
+		3: Auth method (0x0 noop, 0x2 for user/pass) */
 	for sc.status == stsRdHead {
-		log.Debug("read header")
 		headBuf := make([]byte, 0, 256)
 		tmp := make([]byte, 32)
 		for sc.status == stsRdHead {
-			log.Debug("wait read", sc.status)
 			n, err := conn.Read(tmp)
 			if err != nil {
 				if err == io.EOF {
@@ -72,13 +68,10 @@ func doHandleConnection(conn net.Conn) {
 				}
 				break
 			}
-			log.Debug("read bytes")
 			headBuf = append(headBuf, tmp[:n]...)
 			doProcessHeader(headBuf, &sc)
 		}
 	}
-
-	log.Debug("header done ", sc.status)
 
 	if sc.status == stsErNoAuth || sc.status == stsNegAuth {
 		// write socks version
@@ -97,12 +90,10 @@ func doHandleConnection(conn net.Conn) {
 	}
 
 	for sc.status == stsNegAuth {
-		log.Debug("chosen method =", sc.authMethod)
 		v := make([]byte, 1)
 		v[0] = byte(sc.authMethod)
 		sc.conn.Write(v)
 
-		log.Debug("read auth")
 		negBuf := make([]byte, 0, 516)
 		tmp := make([]byte, 32)
 		for sc.status == stsNegAuth {
@@ -119,8 +110,6 @@ func doHandleConnection(conn net.Conn) {
 			sc.auth(negBuf, &sc)
 		}
 	}
-
-	log.Debug("header done ", sc.status)
 
 	if sc.status == stsWrAuthErr || sc.status == stsWrCmd {
 		// write auth version
@@ -145,7 +134,6 @@ func doHandleConnection(conn net.Conn) {
 		v[0] = 0x00
 		sc.conn.Write(v)
 
-		log.Debug("process command")
 		doProxy(&sc)
 	}
 
@@ -164,19 +152,15 @@ func doProcessHeader(data []byte, conn *serverConnection) {
 		return
 	}
 
-	log.Debug("SOCKS version 5")
-
 	if len(data) == 1 {
 		return
 	}
 
-	log.Debug("Client supports ", data[1], " auth methods")
+	log.Info("Client supports ", data[1], " auth methods")
 
 	if len(data) >= (int(data[1]) + 2) {
-		log.Debug("processing auth methods")
 		// will choose the highest value automatically, between none and user/pass
 		for _, code := range data[2:] {
-			log.Debug("AUTH METHOD", code)
 			if code == autMtNone {
 				conn.authMethod = autMtNone
 				conn.auth = doAuthNone
@@ -189,7 +173,7 @@ func doProcessHeader(data []byte, conn *serverConnection) {
 		}
 
 		if conn.authMethod == -1 {
-			log.Debug("No valid auth methods")
+			log.Info("No valid auth methods")
 			conn.status = stsErNoAuth
 		} else {
 			conn.status = stsNegAuth

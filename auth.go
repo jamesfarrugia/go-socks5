@@ -1,7 +1,7 @@
 package main
 
 func doAuthNone(data []byte, conn *serverConnection) {
-	log.Info("NOAUTH - pass through")
+	log.Debug("NOOP auth - pass through")
 	conn.status = stsWrCmd
 }
 
@@ -40,10 +40,10 @@ func doAuthPass(data []byte, conn *serverConnection) {
 
 	if len(data) >= hIdx {
 		if version == 1 && username == "james" && password == "james" {
-			log.Info("USER AUTHENTICATED")
+			log.Info("User authenticated")
 			conn.status = stsWrCmd
 		} else {
-			log.Info("USER FAILED")
+			log.Info("User failed authentication")
 			conn.status = stsWrAuthErr
 		}
 	}

@@ -102,8 +102,7 @@ func doConnectToTarget(conn *serverConnection) {
 }
 
 func doHandleProxying(conn *serverConnection) {
-	log.Info("Proxying ", conn.conn.RemoteAddr(), "to", conn.targetConn.RemoteAddr())
-	//egress(conn)
+	log.Debug("Proxying ", conn.conn.RemoteAddr(), "to", conn.targetConn.RemoteAddr())
 	go egress(conn)
 	go ingress(conn)
 

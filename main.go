@@ -6,7 +6,7 @@ import (
 )
 
 func main() {
-	log.Info("Golang SOCKS5 app")
+	log.Info("Golang SOCKS5 app - James Farrugia 2018")
 	conf := doInit(os.Args[1:])
 	service := conf.init(conf)
 
