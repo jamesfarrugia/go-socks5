@@ -139,5 +139,6 @@ func pipe(conn *serverConnection, from net.Conn, to net.Conn) {
 			break
 		}
 		to.Write(buf)
+		conn.dataCount++
 	}
 }

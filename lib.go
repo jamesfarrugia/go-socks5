@@ -31,4 +31,5 @@ type serverConnection struct {
 	targetIp   []byte
 	targetPort uint16
 	targetConn net.Conn
+	dataCount  int8
 }
