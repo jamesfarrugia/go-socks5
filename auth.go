@@ -1,17 +1,19 @@
 package main
 
+// NOOP authentication, which is not completely correct as clients are stalling at this point
 func doAuthNone(data []byte, conn *serverConnection) {
 	log.Debug("NOOP auth - pass through")
 	conn.status = stsWrCmd
 }
 
+// Username Password authentication
 func doAuthPass(data []byte, conn *serverConnection) {
-	var hIdx int = 0
-	var version int = -1
-	var lenUname int = -1
-	var lenPassw int = -1
-	var username string = ""
-	var password string = ""
+	var hIdx int
+	var version = -1
+	var lenUname = -1
+	var lenPassw = -1
+	var username = ""
+	var password = ""
 
 	if len(data) >= hIdx+1 {
 		version = int(data[hIdx])

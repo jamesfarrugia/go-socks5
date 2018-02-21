@@ -11,6 +11,7 @@ import (
 	"code.cloudfoundry.org/bytefmt"
 )
 
+// Proxies the connection and pipes the data between client and target
 func doProxy(conn *serverConnection) {
 	conn.status = stsRdConn
 	doProcessesConnection(conn)
@@ -22,10 +23,10 @@ func doProxy(conn *serverConnection) {
 	v[2] = 0x00 // always 0
 	v[3] = 0x01 // IP4 type
 
-	v[4] = conn.targetIp[0] // IP4 Octet 1
-	v[5] = conn.targetIp[1] // IP4 Octet 2
-	v[6] = conn.targetIp[2] // IP4 Octet 3
-	v[7] = conn.targetIp[3] // IP4 Octet 4
+	v[4] = conn.targetIP[0] // IP4 Octet 1
+	v[5] = conn.targetIP[1] // IP4 Octet 2
+	v[6] = conn.targetIP[2] // IP4 Octet 3
+	v[7] = conn.targetIP[3] // IP4 Octet 4
 
 	v[8] = 0x0 // IP4 Port
 	v[9] = 0x0 // IP4 Port
@@ -33,16 +34,23 @@ func doProxy(conn *serverConnection) {
 	if conn.status == stsTgtErr {
 		v[1] = 0x1
 		conn.status = stsClose
-		conn.conn.Write(v)
+		_, err := conn.conn.Write(v)
+		if err != nil {
+			log.Error("Failed to write target error response")
+		}
 		return
 	}
 
-	conn.conn.Write(v)
+	_, err := conn.conn.Write(v)
+	if err != nil {
+		log.Error("Failed to write target header response")
+	}
 
 	// process connection
 	doHandleProxying(conn)
 }
 
+// PRocesses the connection request
 func doProcessesConnection(conn *serverConnection) {
 	for conn.status == stsRdConn {
 		cmdBuf := make([]byte, 0, 516)
@@ -59,37 +67,42 @@ func doProcessesConnection(conn *serverConnection) {
 			}
 			cmdBuf = append(cmdBuf, tmp[:n]...)
 			if len(cmdBuf) > 4 {
-				if cmdBuf[0] != 5 {
-					log.Error("Version mismatch")
-					conn.status = stsClose
-					continue
-				}
-				if cmdBuf[1] != 1 {
-					log.Error("Only TCP/IP proxying is supported")
-					conn.status = stsClose
-					continue
-				}
-				if cmdBuf[3] != 1 {
-					log.Error("Only IP4 addresses are supported, want 1 got", cmdBuf[3])
-					conn.status = stsClose
-					continue
-				}
-
-				if len(cmdBuf) == 10 {
-					ip := cmdBuf[4:8]
-					port := cmdBuf[8:]
-					conn.status = stsTgtConn
-					conn.targetIp = ip
-					conn.targetPort = binary.BigEndian.Uint16(port)
-				}
-
+				doProcessConnectionHeader(conn, cmdBuf)
 			}
 		}
 	}
 }
 
+// Processes the connection opener header
+func doProcessConnectionHeader(conn *serverConnection, cmdBuf []byte) {
+	if cmdBuf[0] != 5 {
+		log.Error("Version mismatch")
+		conn.status = stsClose
+		return
+	}
+	if cmdBuf[1] != 1 {
+		log.Error("Only TCP/IP proxying is supported")
+		conn.status = stsClose
+		return
+	}
+	if cmdBuf[3] != 1 {
+		log.Error("Only IP4 addresses are supported, want 1 got", cmdBuf[3])
+		conn.status = stsClose
+		return
+	}
+
+	if len(cmdBuf) == 10 {
+		ip := cmdBuf[4:8]
+		port := cmdBuf[8:]
+		conn.status = stsTgtConn
+		conn.targetIP = ip
+		conn.targetPort = binary.BigEndian.Uint16(port)
+	}
+}
+
+// Connects to a target server
 func doConnectToTarget(conn *serverConnection) {
-	ip := net.IPv4(conn.targetIp[0], conn.targetIp[1], conn.targetIp[2], conn.targetIp[3])
+	ip := net.IPv4(conn.targetIP[0], conn.targetIP[1], conn.targetIP[2], conn.targetIP[3])
 	addr := strings.Join([]string{ip.String(), fmt.Sprint(conn.targetPort)}, ":")
 	rConn, err := net.Dial("tcp", addr)
 
@@ -103,12 +116,13 @@ func doConnectToTarget(conn *serverConnection) {
 	conn.targetConn = rConn
 }
 
+// Starts the actual proxying by triggerring two go routines, one to pipe from client to target, and the other vice-versa
 func doHandleProxying(conn *serverConnection) {
 	log.Debug("Proxying ", conn.conn.RemoteAddr(), "to", conn.targetConn.RemoteAddr())
 	go egress(conn)
 	go ingress(conn)
 
-	var prev int64 = 0
+	var prev int64
 	for conn.status == stsProxying {
 		time.Sleep(time.Duration(5) * time.Second)
 		log.Debug("Session ", conn.id, " - ", prev, " bytes in last 5 sec ~ ", bytefmt.ByteSize(uint64((prev / 5))), "/s")
@@ -130,7 +144,8 @@ func ingress(conn *serverConnection) {
 	}
 }
 
-func pipe(conn *serverConnection, from net.Conn, to net.Conn) {
+// 'Pipes' data between two connections by readin from one and writing to the other
+func pipe(conn *serverConnection, from io.Reader, to io.Writer) {
 	buf := make([]byte, 1)
 	for conn.status == stsProxying {
 		_, err := from.Read(buf)
@@ -143,7 +158,10 @@ func pipe(conn *serverConnection, from net.Conn, to net.Conn) {
 			}
 			break
 		}
-		to.Write(buf)
+		_, err = to.Write(buf)
+		if err != nil {
+			log.Error("Failed to write data while piping")
+		}
 		conn.dataCount++
 	}
 }

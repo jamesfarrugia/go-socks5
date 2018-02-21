@@ -7,23 +7,41 @@ import (
 	"time"
 )
 
+// NOOP Authentication method
 const autMtNone = 0
+
+// Username/PAssword authentication method
 const autMtPass = 2
 
+// Connection status
 const (
-	stsNew       = iota
-	stsRdHead    = iota
-	stsNegAuth   = iota
-	stsErNoAuth  = iota
-	stsWrCmd     = iota
+	// New connection
+	stsNew = iota
+	// Reading header
+	stsRdHead = iota
+	// Negotiating auth
+	stsNegAuth = iota
+	// No auth methods error
+	stsErNoAuth = iota
+	// Write auth response
+	stsWrCmd = iota
+	// Write auth error
 	stsWrAuthErr = iota
-	stsRdConn    = iota
-	stsTgtConn   = iota
-	stsTgtErr    = iota
-	stsProxying  = iota
-	stsClose     = iota
+	// Read command
+	stsRdConn = iota
+	// Open target connection
+	stsTgtConn = iota
+	// Target error
+	stsTgtErr = iota
+	// Proxying connection
+	stsProxying = iota
+	// Closing connection
+	stsClose = iota
 )
 
+// Main entry point for the SOCKS5 server
+// This will open a passive TCP port, accept clients
+// and process them in their own routine
 func server(serv service) {
 	log.Info("Starting server")
 
@@ -44,15 +62,48 @@ func server(serv service) {
 	}
 }
 
+// Main entry point for a new connection
+// The authentication is negotiated, processed, and if there were no errors, proxying starts
 func doHandleConnection(conn net.Conn) {
 	log.Debug("Accepted connection", conn.RemoteAddr().String())
 
 	sc := serverConnection{id: time.Now().Unix(), conn: conn, status: stsNew, authMethod: -1, dataCount: 0}
 
-	for sc.status == stsNew {
+	if sc.status == stsNew {
 		sc.status = stsRdHead
 	}
 
+	doProcessAuth(&sc)
+
+	for sc.status == stsWrCmd {
+
+		// write auth success
+		v := make([]byte, 1)
+		v[0] = 0x00
+		_, err := sc.conn.Write(v)
+		if err != nil {
+			log.Error("Failed to write auth success response")
+		}
+
+		doProxy(&sc)
+	}
+
+	log.Info("Closing connection", conn.RemoteAddr().String(), "status", sc.status)
+	err := conn.Close()
+	if err != nil {
+		log.Error("Failed to close connection")
+	}
+}
+
+// Process the connection authentication
+func doProcessAuth(sc *serverConnection) {
+
+	doNegotation(sc)
+	doAuthentication(sc)
+}
+
+// Negotiates the connection
+func doNegotation(sc *serverConnection) {
 	/*	1: SOCKS version (must be 0x5)
 		2: No. of auth methods (0x2, noop and user/pass only supported)
 		3: Auth method (0x0 noop, 0x2 for user/pass) */
@@ -60,7 +111,7 @@ func doHandleConnection(conn net.Conn) {
 		headBuf := make([]byte, 0, 256)
 		tmp := make([]byte, 32)
 		for sc.status == stsRdHead {
-			n, err := conn.Read(tmp)
+			n, err := sc.conn.Read(tmp)
 			if err != nil {
 				if err == io.EOF {
 					sc.status = stsClose
@@ -70,78 +121,14 @@ func doHandleConnection(conn net.Conn) {
 				break
 			}
 			headBuf = append(headBuf, tmp[:n]...)
-			doProcessHeader(headBuf, &sc)
+			doProcessHeader(headBuf, sc)
 		}
 	}
 
-	if sc.status == stsErNoAuth || sc.status == stsNegAuth {
-		// write socks version
-		v := make([]byte, 1)
-		v[0] = 0x05
-		sc.conn.Write(v)
-	}
-
-	if sc.status == stsErNoAuth {
-		// write error
-		v := make([]byte, 1)
-		v[0] = 0xff
-		sc.conn.Write(v)
-		// close connection
-		sc.status = stsClose
-	}
-
-	for sc.status == stsNegAuth {
-		v := make([]byte, 1)
-		v[0] = byte(sc.authMethod)
-		sc.conn.Write(v)
-
-		negBuf := make([]byte, 0, 516)
-		tmp := make([]byte, 32)
-		for sc.status == stsNegAuth {
-			n, err := conn.Read(tmp)
-			if err != nil {
-				if err == io.EOF {
-					sc.status = stsClose
-				} else if err != nil {
-					log.Error("Failed to read", err.Error())
-				}
-				break
-			}
-			negBuf = append(negBuf, tmp[:n]...)
-			sc.auth(negBuf, &sc)
-		}
-	}
-
-	if sc.status == stsWrAuthErr || sc.status == stsWrCmd {
-		// write auth version
-		v := make([]byte, 1)
-		v[0] = 0x01
-		sc.conn.Write(v)
-	}
-
-	if sc.status == stsWrAuthErr {
-		// write auth error
-		v := make([]byte, 1)
-		v[0] = 0x01
-		sc.conn.Write(v)
-		// close connection
-		sc.status = stsClose
-	}
-
-	for sc.status == stsWrCmd {
-
-		// write auth success
-		v := make([]byte, 1)
-		v[0] = 0x00
-		sc.conn.Write(v)
-
-		doProxy(&sc)
-	}
-
-	log.Info("Closing connection", conn.RemoteAddr().String(), "status", sc.status)
-	conn.Close()
+	doNegotationResponse(sc)
 }
 
+// Processes a negotiation header
 func doProcessHeader(data []byte, conn *serverConnection) {
 
 	if len(data) == 0 {
@@ -179,5 +166,89 @@ func doProcessHeader(data []byte, conn *serverConnection) {
 		} else {
 			conn.status = stsNegAuth
 		}
+	}
+}
+
+// Sends the response for the negotiation.  Sends the SOCKS5 version (0x5), and an error if that is the case.
+// The chosen repsonse is sent in the doAuthentication function, which has a more direct inteaction with the
+//method itself
+func doNegotationResponse(sc *serverConnection) {
+	if sc.status == stsErNoAuth || sc.status == stsNegAuth {
+		// write socks version
+		v := make([]byte, 1)
+		v[0] = 0x05
+		_, err := sc.conn.Write(v)
+		if err != nil {
+			log.Error("Failed to write auth response")
+		}
+	}
+
+	if sc.status == stsErNoAuth {
+		// write error
+		v := make([]byte, 1)
+		v[0] = 0xff
+		_, err := sc.conn.Write(v)
+		if err != nil {
+			log.Error("Failed to write no auth method response")
+		}
+		sc.status = stsClose
+	}
+}
+
+// Sends the chosen method and expects the client to communicate accordingly.
+// The data is passed to the relevant authentication function to handle the
+// authentication state
+func doAuthentication(sc *serverConnection) {
+	for sc.status == stsNegAuth {
+		v := make([]byte, 1)
+		v[0] = byte(sc.authMethod)
+		_, err := sc.conn.Write(v)
+		if err != nil {
+			log.Error("Failed to write auth method response")
+		}
+
+		negBuf := make([]byte, 0, 516)
+		tmp := make([]byte, 32)
+		for sc.status == stsNegAuth {
+			n, err := sc.conn.Read(tmp)
+			if err != nil {
+				if err == io.EOF {
+					sc.status = stsClose
+				} else if err != nil {
+					log.Error("Failed to read", err.Error())
+				}
+				break
+			}
+			negBuf = append(negBuf, tmp[:n]...)
+			sc.auth(negBuf, sc)
+		}
+	}
+
+	doAuthenticationResponse(sc)
+}
+
+// Reponds to the connection info according to the status set by the
+// authentication function
+func doAuthenticationResponse(sc *serverConnection) {
+	if sc.status == stsWrAuthErr || sc.status == stsWrCmd {
+		// write auth version
+		v := make([]byte, 1)
+		v[0] = 0x01
+		_, err := sc.conn.Write(v)
+		if err != nil {
+			log.Error("Failed to write auth response byte 0")
+		}
+	}
+
+	if sc.status == stsWrAuthErr {
+		// write auth error
+		v := make([]byte, 1)
+		v[0] = 0x01
+		_, err := sc.conn.Write(v)
+		if err != nil {
+			log.Error("Failed to write auth error response")
+		}
+		// close connection
+		sc.status = stsClose
 	}
 }

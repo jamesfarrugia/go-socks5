@@ -5,6 +5,7 @@ import (
 	"strings"
 )
 
+// Goes through cmd args and sets up the host, port and service type
 func doInit(args []string) config {
 	conf := config{server: true, host: "127.0.0.1", port: 1080}
 	conf.server = true
@@ -16,8 +17,8 @@ func doInit(args []string) config {
 		}
 
 		if strings.HasPrefix(arg, "-port=") {
-			portStr := string(arg[6:])
-			var err error = nil
+			portStr := arg[6:]
+			var err error
 			conf.port, err = strconv.Atoi(portStr)
 			if err != nil {
 				panic("Port must be a number")
