@@ -39,6 +39,8 @@ type appState struct {
 	connections []*serverConnection
 	// lock for connections list
 	connLock *sync.Mutex
+	// lock for user list
+	userLock *sync.Mutex
 }
 
 // Service structure
@@ -77,6 +79,8 @@ type serverConnection struct {
 	dataIn int64
 	// Basic stats on number of bytes out
 	dataOut int64
+	// total number of milliseconds connection was active
+	activeTime int64
 }
 
 func (s serverConnection) filter(filter func() bool) bool {

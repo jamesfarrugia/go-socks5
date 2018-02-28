@@ -47,6 +47,8 @@ func server(serv service) {
 	log.Info("Starting server")
 	app.service = &serv
 	app.connLock = &sync.Mutex{}
+	app.userLock = &sync.Mutex{}
+
 	addr := fmt.Sprintf("%s:%d", serv.config.host, serv.config.port)
 	server, err := net.Listen("tcp", addr)
 

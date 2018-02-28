@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 
 	"github.com/julienschmidt/httprouter"
@@ -41,8 +42,11 @@ func doInitAPI() *httprouter.Router {
 	router.GET("/connections", httpConnections)
 
 	// users
+	router.GET("/users", httpUsers)
+
 	// blacklists
 
+	router.GET("/reverse/:ip", httpReverseIP)
 	return router
 }
 
@@ -83,7 +87,8 @@ func httpConfig(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
 func httpConnections(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 
-	var connections []Connection
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	var connections = make([]Connection, 1)
 	app.connLock.Lock()
 	for _, con := range app.connections {
 		connections = append(connections, Connection{
@@ -94,7 +99,8 @@ func httpConnections(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 			TargetIP:   con.targetIP,
 			TargetPort: con.targetPort,
 			DataIn:     con.dataIn,
-			DataOut:    con.dataOut})
+			DataOut:    con.dataOut,
+			ActiveTime: con.activeTime})
 	}
 	app.connLock.Unlock()
 
@@ -105,4 +111,41 @@ func httpConnections(w http.ResponseWriter, r *http.Request, _ httprouter.Params
 	}
 
 	fmt.Fprintf(w, "%s", connsJSON)
+}
+
+func httpUsers(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	var users []User
+	app.userLock.Lock()
+	users = append(users, User{
+		Username: "james",
+		Enabled:  true})
+	app.userLock.Unlock()
+
+	usersJSON, err := json.Marshal(users)
+
+	if err != nil {
+		log.Error("[API] - httpUsers - ", err)
+	}
+
+	fmt.Fprintf(w, "%s", usersJSON)
+}
+
+func httpReverseIP(w http.ResponseWriter, r *http.Request, p httprouter.Params) {
+
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+	ip := p.ByName("ip")
+	addr, err := net.LookupAddr(ip)
+
+	if err != nil {
+		log.Error("[API] - httpReverseIP - ", err)
+	}
+
+	addressesJSON, err := json.Marshal(addr)
+	if err != nil {
+		log.Error("[API] - httpReverseIP - ", err)
+	}
+
+	fmt.Fprintf(w, "%s", addressesJSON)
 }

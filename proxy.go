@@ -16,18 +16,21 @@ func doProxy(conn *serverConnection) {
 	doConnectToTarget(conn)
 
 	v := make([]byte, 10)
-	v[0] = 0x05 // SOCKS 5
-	v[1] = 0x00 // STATUS, default to success (0), set to 0x1 if we had tgt err
-	v[2] = 0x00 // always 0
-	v[3] = 0x01 // IP4 type
 
-	v[4] = conn.targetIP[0] // IP4 Octet 1
-	v[5] = conn.targetIP[1] // IP4 Octet 2
-	v[6] = conn.targetIP[2] // IP4 Octet 3
-	v[7] = conn.targetIP[3] // IP4 Octet 4
+	if conn.status != stsTgtErr {
+		v[0] = 0x05 // SOCKS 5
+		v[1] = 0x00 // STATUS, default to success (0), set to 0x1 if we had tgt err
+		v[2] = 0x00 // always 0
+		v[3] = 0x01 // IP4 type
 
-	v[8] = 0x0 // IP4 Port
-	v[9] = 0x0 // IP4 Port
+		v[4] = conn.targetIP[0] // IP4 Octet 1
+		v[5] = conn.targetIP[1] // IP4 Octet 2
+		v[6] = conn.targetIP[2] // IP4 Octet 3
+		v[7] = conn.targetIP[3] // IP4 Octet 4
+
+		v[8] = 0x0 // IP4 Port
+		v[9] = 0x0 // IP4 Port
+	}
 
 	if conn.status == stsTgtErr {
 		v[1] = 0x1
@@ -175,5 +178,10 @@ func (w counterWriter) Write(p []byte) (n int, err error) {
 	} else {
 		w.conn.dataOut += int64(len(p))
 	}
-	return w.to.Write(p)
+
+	start := time.Now()
+	written, err := w.to.Write(p)
+	w.conn.activeTime += time.Now().Sub(start).Nanoseconds()
+
+	return written, err
 }

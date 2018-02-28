@@ -40,4 +40,14 @@ type Connection struct {
 	DataIn int64
 	// Basic stats on number of bytes proxied
 	DataOut int64
+	// ActiveTime is the total number of milliseconds the connection was active
+	ActiveTime int64
+}
+
+// User represents an account that can be used to log in
+type User struct {
+	// Username
+	Username string
+	// Enabled flag
+	Enabled bool
 }
